@@ -62,7 +62,22 @@ func (h *httpService) getHealthResponseForEndpoint(ctx context.Context, endpoint
 	reqCtx, cancelReq := context.WithCancel(ctx)
 	defer cancelReq()
 
-	resp, err := h.Get(reqCtx, endpoint, nil)
+	var (
+		headers map[string]string
+		err     error
+	)
+
+	for _, addHeaders := range h.healthHeaders {
+		if headers, err = addHeaders(reqCtx, headers); err != nil {
+			break
+		}
+	}
+
+	var resp *http.Response
+
+	if err == nil {
+		resp, err = h.GetWithHeaders(reqCtx, endpoint, nil, headers)
+	}
 
 	if err != nil || resp == nil {
 		healthResponse.Status = serviceDown

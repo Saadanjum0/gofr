@@ -11,6 +11,10 @@ type DefaultHeaders struct {
 }
 
 func (a *DefaultHeaders) AddOption(h HTTP) HTTP {
+	addHealthHeaders(h, func(_ context.Context, headers map[string]string) (map[string]string, error) {
+		return setCustomHeader(headers, a.Headers), nil
+	})
+
 	return &customHeader{
 		Headers: a.Headers,
 		HTTP:    h,

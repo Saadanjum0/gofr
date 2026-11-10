@@ -46,6 +46,18 @@ type httpService struct {
 	healthEndpoint string
 	// healthTimeout is the timeout in seconds for health check requests
 	healthTimeout int
+
+	// healthHeaders are the header providers of the auth and DefaultHeaders options. Health checks
+	// call httpService directly, below those option wrappers, so without these they would be sent
+	// with no credentials or default headers.
+	healthHeaders []func(context.Context, map[string]string) (map[string]string, error)
+}
+
+// addHealthHeaders makes health checks of the service under h send the headers fn adds.
+func addHealthHeaders(h HTTP, fn func(context.Context, map[string]string) (map[string]string, error)) {
+	if svc := extractHTTPService(h); svc != nil {
+		svc.healthHeaders = append(svc.healthHeaders, fn)
+	}
 }
 
 type HTTP interface {
