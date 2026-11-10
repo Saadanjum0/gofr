@@ -18,6 +18,8 @@ type BasicAuthConfig struct {
 }
 
 func (c *BasicAuthConfig) AddOption(h HTTP) HTTP {
+	addHealthHeaders(h, c.addAuthorizationHeader)
+
 	return &authProvider{auth: c.addAuthorizationHeader, HTTP: h}
 }
 

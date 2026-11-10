@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"gofr.dev/pkg/gofr/logging"
@@ -120,4 +122,67 @@ func initializeTest(t *testing.T, urlSuffix string, statusCode int) (HTTP, *http
 		&HealthConfig{HealthEndpoint: ".well-known/" + urlSuffix})
 
 	return service, server, metrics
+}
+
+// A health endpoint that needs credentials or headers must receive the ones configured through the
+// auth and DefaultHeaders options, or every check reports the service DOWN.
+func TestHTTPService_HealthCheckSendsAuthAndDefaultHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Api-Key") != "k" || r.Header.Get("X-Tenant") != "t" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	apiKey, err := NewAPIKeyConfig("k")
+	require.NoError(t, err)
+
+	svc := NewHTTPService(server.URL, logging.NewMockLogger(logging.INFO), nil,
+		&HealthConfig{HealthEndpoint: "health"}, apiKey, &DefaultHeaders{Headers: map[string]string{"X-Tenant": "t"}})
+
+	assert.Equal(t, serviceUp, svc.HealthCheck(t.Context()).Status)
+}
+
+// With a circuit breaker the health check decides when the circuit closes, so a check that cannot
+// authenticate would keep it open for good.
+func TestHTTPService_CircuitBreakerClosesWhenHealthEndpointNeedsAuth(t *testing.T) {
+	var healed atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Api-Key") != "k" || !healed.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	apiKey, err := NewAPIKeyConfig("k")
+	require.NoError(t, err)
+
+	svc := NewHTTPService(server.URL, logging.NewMockLogger(logging.INFO), nil,
+		&HealthConfig{HealthEndpoint: "health"},
+		&CircuitBreakerConfig{Threshold: 1, Interval: 20 * time.Millisecond}, apiKey)
+
+	for range 2 {
+		resp, _ := svc.Get(t.Context(), "data", nil)
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}
+
+	healed.Store(true)
+
+	assert.Eventually(t, func() bool {
+		resp, err := svc.Get(t.Context(), "data", nil)
+		if resp != nil {
+			resp.Body.Close()
+		}
+
+		return err == nil
+	}, 3*time.Second, 20*time.Millisecond)
 }

@@ -53,7 +53,11 @@ type OAuthConfig struct {
 }
 
 func (c *OAuthConfig) AddOption(svc HTTP) HTTP {
-	return &authProvider{auth: c.newTokenProvider().addAuthorizationHeader, HTTP: svc}
+	addAuth := c.newTokenProvider().addAuthorizationHeader
+
+	addHealthHeaders(svc, addAuth)
+
+	return &authProvider{auth: addAuth, HTTP: svc}
 }
 
 func NewOAuthConfig(clientID, secret, tokenURL string, scopes []string, params url.Values, authStyle oauth2.AuthStyle) (Options, error) {

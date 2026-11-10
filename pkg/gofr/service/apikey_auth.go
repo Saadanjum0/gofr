@@ -18,6 +18,8 @@ type APIKeyConfig struct {
 }
 
 func (a *APIKeyConfig) AddOption(h HTTP) HTTP {
+	addHealthHeaders(h, a.addAuthorizationHeader)
+
 	return &authProvider{auth: a.addAuthorizationHeader, HTTP: h}
 }
 

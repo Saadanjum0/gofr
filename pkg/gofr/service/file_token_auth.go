@@ -107,7 +107,13 @@ func NewFileTokenAuthConfig(opts ...FileTokenAuthOption) (*FileTokenAuthConfig, 
 
 // AddOption implements Options.
 func (f *FileTokenAuthConfig) AddOption(h HTTP) HTTP {
-	return &fileTokenDecorator{source: f, HTTP: h}
+	d := &fileTokenDecorator{source: f, HTTP: h}
+
+	addHealthHeaders(h, func(_ context.Context, headers map[string]string) (map[string]string, error) {
+		return d.inject(headers)
+	})
+
+	return d
 }
 
 // SetLogger implements Observable. NewHTTPService calls this with the
